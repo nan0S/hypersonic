@@ -1,5 +1,6 @@
 *.o
 hypersonic.exe
+hypersonic
 *.log
 *.aux
 *.dvi
