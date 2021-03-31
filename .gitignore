@@ -1,0 +1,10 @@
+*.o
+hypersonic.exe
+*.log
+*.aux
+*.dvi
+*synctex.gz
+*.out
+.gdb_history
+arena
+report.zip
