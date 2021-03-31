@@ -153,6 +153,13 @@ BeamSearch::eval_t BeamSearch::eval(const State& s) {
             if (s.game.board.isBox(x, y) && s.explosions.isOwner(x, y, s.game.myid))
                 points += 1 * (boxReward - s.explosions.e[y][x].time);
             
+    eval_t sumDists = 0;
+    for (int y = 0; y < s.game.H; ++y)
+        for (int x = 0; x < s.game.W; ++x)
+            if (s.game.board.isBox(x, y))
+                sumDists += std::abs(me->x - x) + std::abs(me->y - y);
+    points -= 0.1 * sumDists;
+    
     points -= 0.04 * std::abs(me->y - s.game.H * 0.5);
     points -= 0.04 * std::abs(me->x - s.game.W * 0.5);
 
