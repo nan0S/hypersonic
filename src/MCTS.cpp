@@ -73,7 +73,7 @@ bool Node::fullyExpanded()
 	return c_size >= int(this->actions.size());
 }
 
-Node* Node::newChild(bool dbg)
+Node* Node::newChild(bool)
 {
 	Action newAction = this->actions[children.size()];
 
