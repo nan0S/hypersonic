@@ -1,0 +1,259 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper, margin=2cm]{geometry}
+\usepackage{listings}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{float}
+
+\title{
+	Project \\
+	Artificial Intelligence for Games \\
+}
+\author{Hubert Obrzut, Szymon Kosakowski}
+
+\begin{document}
+
+	\maketitle
+	
+	\section{Introduction}
+	This report describes our project for \texttt{Artificial Intelligence for Games} course. We attempted to create a bot for \texttt{TORCS} game - car racing simulation and created, implemented and tested a few agents for \texttt{Hypersonic} game from \textbf{CodinGame} platform. All the bots and agents were implemented in \texttt{C++}.
+	
+	
+	\section{TORCS}
+    \subsection{Connecting to the game}
+    The game provides a patch for itself which overlaps the game with server to which user can connect via client program. Server sends information about current state of the car user controls using UDP datagrams. User has following sensors at his disposal:
+    
+    \begin{figure}[H]
+ 	    \centering
+    	\includegraphics[scale=0.55]{screens/sensors1.png}
+ 	    \caption{Description of the available sensors (part I). Ranges are reported with their unit of measure (where defined)}
+ 	\end{figure}
+ 	
+    \begin{figure}[H]
+ 	    \centering
+    	\includegraphics[scale=0.55]{screens/sensors2.png}
+     	\caption{Description of the available sensors (part II). Ranges are reported with their unit of measure (where defined)}
+ 	\end{figure}
+ 	
+ 	\begin{figure}[H]
+ 	    \centering
+    	\includegraphics[scale=0.55]{screens/sensors3.png}
+     	\caption{Description of the available sensors (part III). Ranges are reported with their unit of measure (where defined)}
+ 	\end{figure}
+ 	
+    The actions user can make are:
+    \begin{itemize}
+        \item press gas pedal - value from $[0,1]$
+        \item press brake pedal - value from $[0,1]$
+        \item change the gear
+        \item rotate the steering wheel - value from $[-1,1]$, max rotation is equivalent to $0.366519$ rad of wheel rotation.
+    \end{itemize}
+    
+    After understanding the problem, we have decided to try using \textit{Monte Carlo Tree Search} algorithm. With that we decided to stop using the client (written in Python) and connect directly to the game code (in \texttt{C++}).\\
+    
+    \subsection{General approach}
+    As mentioned earlier we used \textit{MCTS} algorithm. We wanted to collect the data of current track on the first lap and then ride on it on next laps with our algorithm. Our idea was to ride slowly at the center of the track on the first lap and collect the coordinates of driving line on every iteration. It quickly turned out that we need to come up with a simulation of the car first to collect the data (the client didn't have access to the position of the car) and second to simulate in \textit{MCTS}.
+    
+    \subsection{Physical attempt}
+    At first we tried physical simulation. \texttt{TORCS} stores the parameters of every car in \texttt{XML} files, so we had access to the information about the car we were trying to simulate. It was the default car: \texttt{car1-trb1}. We have decided to use the \textit{bicycle model}. \\ \\
+    A brief description of it:
+    \begin{itemize}
+        \item the model clamps both front and rear wheels into one
+        \item it finds the center of rotation based on the speed, length and steering angle of the car.
+        \item rotates the car around found center using the angle between the car direction and x axis of the world (calculated using position from previous iteratiom)
+    \end{itemize}
+    Before actually moving the car we approximated its speed after pressing the gas or brake pedal with given power. For this we used multiple parameters such as:
+    \begin{itemize}
+        \item current RPM of the engine to take its power and torque into account
+        \item current gear of the car to take its efficiency into account
+        \item current fuel of the car in litres to add to mass of the car
+        \item rolling resistance, inertia, radius of wheels
+        \item braking disc radius, braking pad force and maximal brake pressure
+    \end{itemize}
+	After setting the starting position to $(0,0)$ and mirroring every move of the car on the first lap with our model this is an example of the recorded track:
+	
+	\begin{figure}[H]
+ 	    \centering
+    		\includegraphics[scale=0.75]{screens/krzywa_trasa.png}
+ 	\end{figure}
+	
+	Here we figured that \textit{MCTS} wouldn't have much time to return an action so the simulation depth wouldn't be big. We thought that if the simulation tree isn't deep then this model would return values very similar to real ones. We also thought that if position of our artificial simulated car will be calculated by slightly incorrect model but simulated the same way then the results might be valid.
+	
+	\subsection*{Evaluation}
+	For the evaluation we used the smallest distance between car position and point of recorded track and also distance of the car from start line. We didn't wanted the car to constantly steer so to limit its slalom we set the distance to the track to $0$ if it was smaller than some value.
+	
+	\subsection*{Results and conclusion}
+	With beginning of the second lap we started the \textit{MCTS} algorithm on parallel thread with $\textbf{0.3s}$ to return an action. We set the simulation depth to $\texttt{k} = 10$. We restrained the action space to $\texttt{steer}\in \{-0.3, -0.2, ..., 0.3\}$; $\texttt{gas}, \texttt{brake} \in \{0.3, 0.6\}$ and to drive only on the 1st gear. We also made sure that gas and brake are not being pressed at the same time. It achieved an average of $\textbf{12000}$ iterations during the given time. The results were very unsatisfying, the car 'wobbled' for a few metres and the turned into the wall most of the times.
+
+    \subsection{Empirical attempt}
+    After failure of our previous model we decided to fully change the approach. We resigned from using just input avaible only to the default client and we used position of the car from the game. This instantly gave us perfectly recorded tracks from the first lap. We tried the previous simulation system on this track but we didn't notice it act differently so we proceeded to change the simulation.
+    \subsection*{Simulation}
+    This time we wanted it to be simple and fast. We calculated direction vector of the car by taking position previously used as root of the tree and the current one and normalizing it. Then we rotated it by  $\texttt{current\_steer}$ * $\texttt{max\_angle}$ * $\texttt{S\_const}$, where $\texttt{max\_angle} = 0.366519\;rad$ and $\texttt{S\_const} = 1.3$.
+    $\texttt{S\_const}$ was designated empirically. Let's call this vector $\texttt{newDir}$. Then we calculated $\texttt{addVec}$ - vector we were adding to the current position.
+    \begin{itemize}
+        \item if the action was to press gas pedal and $\texttt{acc}$ was the given pressure then:
+        $$\texttt{addVec} = \texttt{accMult} * \texttt{acc} * \texttt{newDir},$$
+        where $\texttt{accMult} = 9.1$ was designated empirically.
+        \item if the action was to press brake pedal and $\texttt{brake}$ was the given pressure then:
+        $$\texttt{addVec} = \texttt{brakeTransfer}(\texttt{brake}) * \texttt{newDir},$$
+        where $\texttt{brakeTransfer}(\texttt{x}) = -0.8 * \texttt{x} + 1.5$ was designated empirically
+    \end{itemize}
+    
+    \subsection*{Evaluation}
+    We evaluated the states the same way as before.
+    \subsection*{Results}
+    The algorithm also worked the same as before on the same action space and achieved about the same number of iteration per given time of $0.3s$. This time after tuning the parameters the car drove as intended - it tried to hold on to the center of the track and could easily drive a full lap. But this was still only on the first gear so the car didn't need to brake for the whole lap to finish it. When we allowed the car to drive on 3rd gear it had too much speed on the curves and it slid when trying to turn - our naive simulation have not considered losing grip.
+    
+    \subsection{Further work and observations}
+    Here we listed changes that we also tried but didn't work:
+    \begin{itemize}
+        \item limiting action space to $\texttt{steer}, \texttt{brake}, \texttt{gas} \in\{-0.1, 0.0, 0.1\}$ and adding the value to previously saved action when applying to a state. We think it didn't work because the algorithm couldn't keep up with the changes actually happening in the game. We tried lowering the amount of time given to the \textit{MCTS} but then the number of iterations were to small to come up with a meaningful action
+        \item We tried adding value of the state for every state during rollout in \textit{MCTS} and extending the depth of simulations but it didn't improve the driver. Probably because the simulations were inaccurate on the curves on higher speeds so the algorithm didn't know its out of its track bounds.
+        
+        \item We also tried using source code of the game to simulate the car. We tried cloning car that was passed to the server and simulate it in parallel to the existing car. It caused collisions with exising car and in general didn't work out.
+    \end{itemize}
+    
+	
+	\section{Hypersonic}
+	After mediocre results in \texttt{TORCS} and shortage of time, we have decided to move into another project idea - to write a bot for \texttt{Hypersonic} game on \textbf{CodinGame}. \texttt{Hypersonic} is a \textit{classic Bomberman-style} game with up to 4 players. We are controlling a player whose target is to destroy as many boxes as possible or to eliminate other players with its bombs. Player can collect bomb range boosters and additional bombs that drop from different boxes on the map. Placed bomb returns to player's inventory once it explodes. The game is played in turns - all players perform their moves simultaneously and every agent has 100 milliseconds for one move (except 1000 milliseconds for the first move in the game).
+	
+	\subsection{First attempts}
+	In order to get to know the game mechanics, we have written a simple rule based bot - it used search algorithm to calculate distances to boxes in the game and acted accordingly. This bot ended up in the \textbf{Bronze League}.
+	
+	\subsection{Further work}
+	To be able to develope more complex agents we had to write properly working game engine, which could simulate the course of the game. For that engine to be useful for agents, evaluation function which evalutes the state of the game had to be also developed. Although every agent could have slightly different evaluation function, all of these functions ended up looking very similar and followed the same rules, as state quality should be objective.
+	
+	\subsection{Game engine and evaluation function}
+	Evaluation function took into the account the amount of boxes agent managed to destroy with more pressure on the boxes destroyed in the near future. This was important as we want to destroy boxes as soon as possible - not only to be able to destroy further boxes, but also to be sure we will be the one who destroys them - as we go into the future, our moves become more and more uncertain as we have decided not to simulate other agents because it was computionally infeasible. Also from the tests we have performed, it was clear, especially at the beginning of the game, to focus on our agent more than on other players.
+	
+	Other important part of the evaluation function was to encourage the agent to place the bomb in the first place - we have to remember that bomb explodes in 8 seconds - that is in 8 turns of the game, so connecting cause with delayed result was critical. In order to do that explosion map was computed - for every cell, information about time in which the cell will explode and who will explode it. Boxes which agent will explode in the future were rewarded proportional to the time we have to wait for that box to be destroyed.
+	
+	Last part of the evaluation function was to reward for picking up boost items. As we start with just 1 bomb with 3 range, out possibilities are pretty limited and the game has slow pace at the beginning, so it is important to pick up boosts to be able to destroy more and more boxes. From tests and experience it was better to reward extra bomb items more - but still up to the certain point.
+	
+	\subsection{Beam Search}
+	After the first solution we have decided to try something more sophisticated - the \textit{Beam Search} algorithm. 
+	\subsubsection*{Main algorithm}
+	At every iteration of the algorithm \texttt{BEAM\_WIDTH} best states were kept. For every one of them we have generated all of its descendants which were part of the next iteration of states. If more than \texttt{BEAM\_WIDTH} descendants were generated in total, only \texttt{BEAM\_WIDTH} best were kept. After all the iterations the first action of the best individual was returned. \\ \\
+    The main algorithm ended up in the \textbf{Silver League} - it had many problems as it was pretty slow (game engine and the algorithm itself needed optimization), \textit{Beam Search} spent a lot of computional power to consider states which led to death after some amount of time (e.g. bomb explodes in 8 seconds).
+    
+    \subsubsection*{Further improvements}
+    If we were not been able to survive in the generated descendant, that state was automatically ignored (we were not able to survive if in the next 8 turns, every possible cell in which we could be would blow up, assmuming no other bombs would be placed). This survivial mechanism was also used in further algorithms tested by us as it was filtered out losing states very quickly (it as also used as a part of the algorithm specific evaluation function). Additionally \textit{Point Beam Search} mechanism was used - every descendant was classified into the cell in which our player landed. If more than \texttt{POINT\_BEAM\_WIDTH} descendants were generated for the given cell, surplus were abandoned. \\ \\
+    This modifications led to the considerable improvement of our agent's behaviour as it was able to get to the \textbf{Legend League} - around \textbf{140th} place in the ranking (out of around 380 participants). \\ \\
+    In order to further improve the quality of our algorithm, both the game engine and the algorithm were optimized leading to approximately 3x speedup. From the game analysis of our agent it was observed that it often led itself to death by placing the bomb while the other player simulataneously placed the bomb in such a configuration, which led our agent to no escape situation - it was the main source of all the deaths of our agent. This was taken care of by computing the set of possible actions in the initial state under assumption that every other player will place its bomb (if has any) where he stands in the next turn. In the first iteration of the algorithm only possible actions were considered. That mechanism lead to the great avoidance of no escape situation - it was effectively one look ahead mechanism under pessimistic asssumption. \\ \\
+    This improved agent got to the very top of the \textbf{Legend League} - \textbf{8th} place in the ranking.\\ \\
+    \textit{Beam Search} agent's final parameters (mentioned above):
+    \begin{center}
+		\begin{tabular}{| l | c |}
+			\hline
+			\texttt{BEAM\_WIDTH} & \textbf{200} \\ \hline
+			\texttt{BEAM\_DEPTH} & \textbf{15} \\ \hline
+			\texttt{LOCAL\_BEAM\_WIDTH} & \textbf{20} \\ \hline
+		\end{tabular}
+	\end{center}
+    
+    \begin{figure}[H]
+ 	    \centering
+    	\includegraphics[scale=0.35]{screens/beamsearch4.png} 	
+	    \caption{Proof of \textit{Beam Search} agent's ranking place on the \textbf{CodinGame} platform.}
+ 	\end{figure}
+    
+    \subsection{Rolling Horizon Evolutionary Algorithm}
+    We have also decided to try radically different approach to the problem. \textit{Rolling Horzion Evolutionary Algorithm} (\textit{RHEA}) is the algorithm which tries to find the best sequence of actions for our agent, up to some point (\texttt{HORIZON\_LENGTH} next actions to be exact). To do that we will use evolutionary algorithm with standard evolutionary operators.
+    
+    \subsubsection*{Main algorithm}
+    In each iteration we will maintain population of \texttt{POPULATION\_SIZE} chromosomes, each of length of \texttt{HORIZON\_LENGTH} genes. We will perform selection of parents from the current population which will generate \texttt{OFFSPRING\_SIZE} children using crossover operators. Children will be mutated with \texttt{MUTATION\_PROBABILITY}. At the end we will create the next population from children and current population.   
+    
+    \subsubsection*{Roadblocks}
+    One problem with creating sequences of moves is that not every sequence of moves is valid - we could have wall ahead. This is especially true when we apply our evolutionary operators which could modify a part of the chromosome (sequence of actions). Other problem is that performing an action could lead us to death, which could be easily avoidable. This led us to the solution in which we ignore actions which are invalid - either because we die or action performed is technically invalid.
+    
+    \subsubsection*{Chromosome evaluation}
+    Chromosome (sequence of actions) was evaluated by performing actions it containts in sequence and returning evaluation of the state in which we end up. If the state in which we end up was no-escape sitatution, evaluation was decreased by some amount, depending on how far in the future the state was not survivable (the further in the future, the smaller the punishment was).
+    
+    \subsubsection*{Evolutionary operators}
+    First we have to mention that action was represented as position delta in two directions from the current position of the agent.
+    
+    \paragraph{Crossover} As a crossover operator we have considered \textit{uniform} crossover and \textit{shuffle} crossover operators. Both crossover functions produced two children from two parents. In \textit{uniform} crossover, one split point was randomly chosen and children were created by merging appropriate parts of two parents. In \textit{shuffle} crossover, every gene was randomly chosen from one of the parents (not chosen one was distributed to the other child). Performed tests indicated that \textit{uniform} crossover was much better than \textit{shuffle} crossover. One explanation could be that \textit{uniform} crossover is very natural when it comes to problems related to path finding (which our game has a lot of in common).
+    
+    \paragraph{Mutation} We mutate every gene of every child with \texttt{MUTATION\_PROBABILITY} probability to a randomly chosen gene (random action).
+    
+    \subsubsection*{Selection}
+    Parents for recombination are selected using \textit{roulette wheel method} - depending on chromosome fitness value, it has different probability to be chosen to create offspring.
+    
+    \subsubsection*{Replacement}
+    We have considered two methods of replacement of current population to the new one - $(\mu+\lambda)$ or $(\mu,\lambda)$. In the first method we create next population with the best individuals from the current population and children. In the second method we create next population with the best individuals only from children. Both methods were tested in the \textbf{CodinGame} and our own environment and we concluded that $(\mu+\lambda)$ replacement is much more efficient as it keeps previously found good solutions, which could have not been created by our evolutionary operators, as some fraction of genes in child could be wasted as they could be invalid in the current state.
+    
+    \subsubsection*{Testing}
+    We have created our own environment in which we could set up a battle between different agents and optimize parameters. One important indication if \textit{RHEA} algorithm works correctly is if population diversity is mantained (the main problem of evolutionary algorithms). Previously mentioned parameters and operators, were tweaked not only for the agent to perform as good as possible but also to maintain population diversity, which is especially true if we want to find good solution.
+    
+    \subsubsection*{Results}
+    When tested in the \textbf{CodinGame} environment, agent ended up in the \textbf{Gold League} - \textbf{1st} place in the ranking - directly below the boss. It was clear that we could improve something to achieve better results, as noone should be forced to end up directly below the boss and not advance to the next league.
+    
+    \subsubsection*{Improvements}
+    In order to further improve the algorithm, individual chromosome evaluations were reduced (which was the main cost in \textit{RHEA} iteration). This led to 2x speed up, which could be used to perform more iterations of the algorithm. Additionally similar mechanism of possible actions was introduced into the \textit{RHEA} algorithm - first actions of all individuals could be only from the set of possible actions in the current state under assumption that every other player will place its bomb in the next turn.
+
+    \subsubsection*{Final RHEA results}
+    Those improvements greatly enhanced the behaviour of \textit{RHEA} agent as it ended up in the \textbf{Legend League} - around \textbf{170th} place ($380$ participants in total).
+    \newpage
+    \textit{RHEA} agent's final parameters (mentioned above):
+    \begin{center}
+		\begin{tabular}{| l | c |}
+			\hline
+			\texttt{POPULATION\_SIZE} & \textbf{100} \\ \hline
+			\texttt{OFFSPRING\_SIZE} & \textbf{100} \\ \hline
+			\texttt{HORIZON\_LENGTH} & \textbf{8} \\ \hline
+			\texttt{MUTATION\_PROBABILITY} & \textbf{0.6} \\ \hline
+		\end{tabular}
+	\end{center}
+	
+	\begin{figure}[H]
+ 	    \centering
+    	\includegraphics[scale=0.35]{screens/RHEA1.png} 	
+	    \caption{Proof of \textit{RHEA} agent's ranking place on the \textbf{CodinGame} platform.}
+ 	\end{figure}
+ 	
+ 	
+ 	\subsection{MCTS}
+    We decided to also try \textit{MCTS} for this problem. We went for the single player variant of the algorithm as the game was too long to simulate whole and we kept scores based on the evaluation function of game states.
+    
+    \subsubsection*{Main Algorithm}
+    On every iteration we created new root of the tree based on the current game state. The algorithm performed for $0.1s$ on every iteration ($1.0s$ on first) and then returned action from node with best average score.
+    
+    \subsubsection*{Traverse}
+    We used \textit{Single Player Monte Carlo Tree Search} UTC formula for selecting the child:
+    \begin{figure}[H]
+ 	    \centering
+    	\includegraphics[scale=0.5]{screens/spformula.png}
+ 	\end{figure}
+ 	\flushleft where:
+    \begin{center}
+		\begin{tabular}{ c  l }
+			\texttt{$\bar{X}$} -& average reward of state \\
+			\texttt{$N$} -& visits of current node \\
+			\texttt{$N_i$} -& visits of i-th child \\
+			\texttt{$C$} =& $1000.0$ \\
+			\texttt{$D$} =& $10000.0$ \\
+		\end{tabular}
+	\end{center}
+	
+	\subsubsection*{Rollout}
+	In rollout we were simulating course of the game for $\texttt{k} = 8$ next turns only for the player. Our policy for action selection was random. If the player reached state when he desintegrated $\texttt{deathReward} = -10.0$ was returned and evaluation value of reached state in other case.
+	\subsection*{Evaluation}
+	The evaluation was the same as in \textit{Beam Search} algorithm described earlier.
+    
+    \subsubsection*{Results}
+    This algorithm has reached \textbf{10th} place in the \textbf{Silver League}.
+ 	
+ 	\subsection{Agents comparison}
+ 	Comparison of the agents presented above in different configurations were performed using our custom game environment. Results are as follows:
+ 	\begin{itemize}
+ 	    \item \textit{Beam Search} vs \textit{RHEA} - $82\%$ vs $18\%$ winrates
+ 	    \item \textit{Beam Search} vs \textit{MCTS} - $99\%$ vs $1\%$ winrates
+ 	    \item \textit{RHEA} vs \textit{MCTS} - $95\%$ vs $5\%$ winrates
+ 	    \item \textit{Beam Search} vs \textit{RHEA} vs \textit{MCTS} - $75\%$ vs $21\%$ vs $4\%$ winrates
+ 	\end{itemize}
+
+ 	\section{Conclusions}
+ 	Considering results, tests and analysis in the presented report, \textit{Beam Search} agent performed the best, resulting in not only reasonably behaving agent but also in the one that ended up in the very top of the ranking of the hightest league on \textbf{CodinGame}. The second best agent was \textit{RHEA} agent, which performed noticeably worse than \textit{Beam Search} agent, but still ended up in the \textbf{Legend League}. \textit{MCTS} agent performed the worst, which is probably due to the lack of time to properly test and improve the algorithm and tweak its parameters.
+    
+\end{document}

@@ -1,0 +1,94 @@
+#!/bin/bash
+
+SCRIPT_NAME="merger"
+VERSION="1.0"
+OPTS=$(getopt -o dhv \
+	--long debug \
+	--long help \
+	--long version \
+	-- "$@")
+eval set -- "$OPTS"
+
+while true
+do
+	case "$1" in
+		-d|--debug)
+			debug=1;;
+		-h|--help)
+			echo -e "Usage: $SCRIPT_NAME [OPTION]...\n"
+			echo -e "Merge all files into one and copy its content into the clipboard in order to be able to paste it on CodinGame platform."
+			echo "List of possible options:"
+			echo -e "\t-d, --debug\tadd debug flag to the merged file to enable asserts and debug prints"
+			echo -e "\t-h, --help\tprint this help"
+			echo -e "\t-v, --version\tshow version info"
+			exit;;
+		-v|--version)
+			echo "$SCRIPT_NAME (script) $VERSION"
+			echo "Written by Hubert Obrzut"
+			exit;;
+		--) shift; break;;
+	esac
+	shift
+done
+
+
+# order in which files should be merged
+DEPS=(
+	Common.hpp
+	Common.cpp
+	Action.hpp
+	Action.cpp
+	GameState.hpp
+	GameState.cpp
+	Agent.hpp
+	Agent.cpp
+	State.hpp
+	State.cpp
+	BeamSearch.hpp
+	BeamSearch.cpp
+	MCTS.hpp
+	MCTS.cpp
+	RHEA.hpp
+	RHEA.cpp
+	Manager.hpp
+	Manager.cpp
+	main.cpp
+)
+
+# append newline at the end of every file, if there is none
+# in order for concatenation to work properly (cat)
+for file in "${DEPS[@]}"; do
+	[ -e "$file" ] || {
+		echo -e "ERROR: $file does not exists!" 1>&2
+		exit 1
+	}
+	[[ $(tail -c1 "$file") && -f "$file" ]] && echo '' >> "$file"
+done
+
+output="CGSolver.cpp"
+flags="-std=c++17 -Wall -Wextra -Wreorder -Ofast -O3 -flto -march=native -s"
+
+ # add pragmas, defines
+echo -e '#pragma GCC optimize "O3,Ofast,unroll-loops,omit-frame-pointer,inline"' > $output
+# echo -e "#pragma GCC target ("avx2")\n#pragma GCC optimization ("O3")\n#pragma GCC optimization ("unroll-loops")" > $output
+# add debug flag define if debug flag was specified
+if [ -n "$debug" ]; then
+	echo "Adding DEBUG flag!"
+	echo -e "#define DEBUG" >> $output
+else
+	echo "Adding NDEBUG flag!"
+	echo -e "#define NDEBUG" >> $output
+fi
+
+cat "${DEPS[@]}" >> $output # join all files into one
+sed -i -e '/HPP/d' -e '/include "/d' $output # remove define HPP guards and "*.hpp" includes
+
+./clipcp $output # copy content of created file into clipboard (clipcp - custom script)
+echo "Solution copied to the clipboard!"
+
+echo "Veryfing if solution compiles ..."
+# verify it compiles
+g++ $output $flags && echo "It does!"
+
+rm -f a.out # remove created binary
+rm -f $output # remove created file
