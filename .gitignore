@@ -3,6 +3,8 @@
 
 hypersonic
 arena
+benchmark
+
 build
 
 *.log

@@ -15,19 +15,23 @@
 int GameState::myid;
 
 std::istream& operator>>(std::istream& in, GameState& game) {
-    for (int y = 0; y < game.H; ++y)
+    for (int y = 0; y < game.H; ++y) {
         for (int x = 0; x < game.W; ++x) {
             char c;
             in >> c;
+            std::cerr << c;
             assert(c == '.' || c == 'X' || std::isdigit(c));
             game.board.board[y][x] =
                 c == '.' ? Cell::empty :
                 c == 'X' ? Cell::wall :
                 Cell(c - '0');
         }
+        std::cerr << '\n';
+    }
 
     int entityCount;
     in >> entityCount;
+    std::cerr << entityCount << '\n';
     for (int i = 0; i < entityCount; ++i) {
         int entityType, owner;
         int x, y;
@@ -35,6 +39,13 @@ std::istream& operator>>(std::istream& in, GameState& game) {
         in >> entityType >> owner;
         in >> x >> y;
         in >> param1 >> param2;
+        std::cerr << entityType << " ";
+        std::cerr << owner << " ";
+        std::cerr << x << " ";
+        std::cerr << y << " ";
+        std::cerr << param1 << " ";
+        std::cerr << param2 << '\n';
+
         switch (entityType) {
             case 0:
                 game.players.push_back({owner, x, y, param1, param2});
@@ -49,6 +60,8 @@ std::istream& operator>>(std::istream& in, GameState& game) {
                 assert(false);
         }
     }
+
+    std::cerr.flush();
 
     return in;
 }

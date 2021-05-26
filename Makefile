@@ -49,6 +49,9 @@ $(TARGET): $(OBJECTS) $(BUILD_DIR)/$(TARGET).o
 arena: $(OBJECTS) $(BUILD_DIR)/arena.o
 	$(CXX) $(CXXFLAGS) -MMD -MP $^ -o $@
 
+benchmark: $(OBJECTS) $(BUILD_DIR)/benchmark.o
+	$(CXX) $(CXXFLAGS) -MMD -MP $^ -o $@
+
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp Makefile
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
