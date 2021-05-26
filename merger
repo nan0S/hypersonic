@@ -52,8 +52,15 @@ DEPS=(
 	RHEA.cpp
 	Manager.hpp
 	Manager.cpp
-	main.cpp
+	hypersonic.cpp
 )
+
+# directory where files are
+DEPSDIR="src"
+
+for i in $(seq 0 $(("${#DEPS[@]}"-1))); do
+    DEPS[$i]="$DEPSDIR/${DEPS[$i]}"
+done
 
 # append newline at the end of every file, if there is none
 # in order for concatenation to work properly (cat)
@@ -86,9 +93,9 @@ sed -i -e '/HPP/d' -e '/include "/d' $output # remove define HPP guards and "*.h
 ./clipcp $output # copy content of created file into clipboard (clipcp - custom script)
 echo "Solution copied to the clipboard!"
 
-echo "Veryfing if solution compiles ..."
+echo "Veryfing that solution compiles ..."
 # verify it compiles
-g++ $output $flags && echo "It does!"
+g++ "$output" $flags && echo "It does!"
 
 rm -f a.out # remove created binary
 rm -f $output # remove created file

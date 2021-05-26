@@ -1,11 +1,15 @@
 *.o
-hypersonic.exe
+*.d
+
 hypersonic
+arena
+build
+
 *.log
 *.aux
 *.dvi
 *synctex.gz
 *.out
 .gdb_history
-arena
+
 report.zip
