@@ -1,4 +1,4 @@
 hypersonic
 ---
 
-Hypersonic (Bomberman from CodinGame) bot implementation.
+[Hypersonic](https://www.codingame.com/ide/puzzle/hypersonic) (Bomberman from CodinGame) bot implementation.
